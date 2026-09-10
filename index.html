@@ -1356,6 +1356,19 @@ var Store = {
     }).then(function (j) {
       if (!j || j.ok !== true) throw { code: (j && j.code) || 'error', message: (j && j.message) || 'Unbekannter Fehler.' };
       return j.data;
+    }).catch(function (err) {
+      if (err && err.code) throw err;
+      // Safari meldet eine blockierte Anfrage als „Load failed", Chrome als
+      // „Failed to fetch". Fast immer steht in der Bereitstellung des Apps
+      // Script bei Zugriff „Jeder mit Google-Konto" statt „Jeder": dann
+      // antwortet Google mit einer Anmeldeseite, die der Browser nicht lesen darf.
+      if (!navigator.onLine) throw { code: 'offline', message: 'Kein Netz.' };
+      throw {
+        code: 'blocked',
+        message: 'Die Anfrage kam nicht durch. Im Apps Script unter Bereitstellungen verwalten ' +
+          'muss bei Zugriff „Jeder" stehen, nicht „Jeder mit Google-Konto". Danach die Version ' +
+          'auf „Neu" setzen und erneut bereitstellen.',
+      };
     });
   },
 
@@ -1468,10 +1481,16 @@ var Store = {
   },
 };
 
+/**
+ * Nur echtes Offline darf in die Warteschlange. Eine blockierte Anfrage muss
+ * sichtbar scheitern, sonst sammelt die App still Einträge, die nie rausgehen.
+ */
 function isOffline(err) {
-  if (!navigator.onLine) return true;
   var c = err && err.code;
-  return c === 'network' || (typeof c === 'string' && c.indexOf('http_5') === 0) || err instanceof TypeError;
+  if (c === 'offline') return true;
+  if (c === 'blocked' || c === 'bad_key' || c === 'not_setup' || c === 'locked') return false;
+  if (!navigator.onLine) return true;
+  return (typeof c === 'string' && c.indexOf('http_5') === 0);
 }
 
 /* ========================================================================== */
@@ -3244,9 +3263,13 @@ function openSetup(lead) {
     '<li>Ein neues Apps Script anlegen: <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> öffnen, leeres Projekt.</li>' +
     '<li>Den Code aus <code>Code.gs</code> komplett einfügen und speichern.</li>' +
     '<li>Oben die Funktion <code>setup</code> auswählen und ausführen. Google fragt nach der Berechtigung, das ist normal. Im Protokoll stehen danach Tabellen-URL und Zugangscode.</li>' +
-    '<li>Bereitstellen, Neue Bereitstellung, Typ Web-App. Ausführen als: Ich. Zugriff: Jeder mit Google-Konto.</li>' +
+    '<li>Bereitstellen, Neue Bereitstellung, Typ Web-App. Ausführen als: <b>Ich</b>. Zugriff: <b>Jeder</b>.</li>' +
     '<li>Web-App-URL und Zugangscode hier oben eintragen, dann Verbinden.</li>' +
     '</ol></div>' +
+    '<div class="quote warnbox"><b>Wichtig bei der Bereitstellung</b><div style="margin-top:4px">Bei Zugriff muss ' +
+    '<b>Jeder</b> stehen, nicht „Jeder mit Google-Konto". Sonst schickt Google jede Anfrage auf eine ' +
+    'Anmeldeseite und die App meldet „Load failed". Deine Daten schützen der Zugangscode und die ' +
+    'unerratbare Adresse.</div></div>' +
     '<div class="quote">Ab der Einrichtung arbeitest du in der neuen Google Tabelle, nicht mehr in der Excel-Datei. Die Excel-Datei bleibt unverändert als Archiv liegen.</div>' +
     (Store.canWrite() ? '<button class="btn quiet wide" type="button" id="cReset">Verbindung trennen</button>' : '');
 
@@ -3281,6 +3304,7 @@ function openSetup(lead) {
           var msg = (err && err.message) || 'Unbekannter Fehler.';
           if (err && err.code === 'bad_key') msg = 'Der Zugangscode passt nicht. Im Apps Script die Funktion showAccess ausführen, dort steht er.';
           if (err && err.code === 'not_setup') msg = 'Im Apps Script fehlt noch der Lauf von setup. Einmal ausführen, dann hier erneut verbinden.';
+          if (err && err.code === 'locked') msg = 'Zu viele Versuche mit falschem Code. Eine Minute warten, dann nochmal.';
           out.innerHTML = '<div class="banner">' + IC.warn + '<div>' + esc(msg) + '</div></div>';
         });
       });
@@ -3500,7 +3524,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T14:04:45.468Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T14:24:35.864Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

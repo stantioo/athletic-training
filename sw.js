@@ -1,7 +1,7 @@
 /* Athletic Training — Service Worker.
    Die Hülle liegt im Cache, damit die App offline startet und den eingebauten
    Stand zeigt. Daten holt die App danach selbst aus dem Apps Script. */
-const CACHE = 'at-202609101516';
+const CACHE = 'at-202609102034';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

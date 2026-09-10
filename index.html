@@ -17,7 +17,7 @@
 <style>html,body{margin:0;background:#150609;color-scheme:dark}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
-<script>window.W27_PWA=true;window.W27_APP_URL="https://stantioo.github.io/athletic-training/";</script>
+<script>window.W27_PWA=true;window.W27_APP_URL="";</script>
 <style>
 /* ============================================================================
    Athletic Training — Design-System
@@ -1075,23 +1075,13 @@ var INFO = {};   // wird nach dem Verbinden aus dem Apps Script geladen
 </script>
 <script>
 /* ============================================================================
-   Athletic Training — Kern: Formate, Datenschicht, Ableitungen, Physik, Diagramme
+   Athletic Training — Rechenlogik, geteilt zwischen PWA und iOS-App
+   Keine DOM-Zugriffe. Läuft im Browser, in Node und in JavaScriptCore.
+   Eingang: das Modell aus parser.js. Ausgang: derive(model).
    ========================================================================= */
 'use strict';
 
-/* ---------------------------------------------------------------- Helfer -- */
-var $ = function (s, r) { return (r || document).querySelector(s); };
-var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
-
-function esc(s) {
-  return String(s == null ? '' : s)
-    .replace(/\s*·\s*/g, ', ')
-    .replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; });
-}
-/** Wie esc, lässt aber die <strong>-Auszeichnung aus info.js durch. */
-function escRich(s) {
-  return esc(s).replace(/&lt;strong&gt;/g, '<strong>').replace(/&lt;\/strong&gt;/g, '</strong>');
-}
+/* ------------------------------------------------------- Zahlen und Datum -- */
 function nf(n, d) {
   if (n == null || isNaN(n)) return '–';
   d = d == null ? 1 : d;
@@ -1119,12 +1109,202 @@ function dLong(iso) { var p = String(iso).split('-'); return (+p[2]) + '.' + (+p
 var WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 function toDate(iso) { return new Date(iso + 'T12:00:00'); }
 function dayDiff(a, b) { return Math.round((toDate(b) - toDate(a)) / 86400000); }
+var __TODAY_OVERRIDE = null;
 function todayISO() {
+  if (__TODAY_OVERRIDE) return __TODAY_OVERRIDE;
   try { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Vienna' }).format(new Date()); }
   catch (e) { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 }
 function mean(a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/* ========================================================================== */
+/*  Ableitungen                                                               */
+/* ========================================================================== */
+
+var RACE_DAY = '2027-04-18';
+var GATE_DAY = '2026-12-31';
+var GATE_CHECK = '2026-12-28';
+var PHASES = [
+  { key: 'Brücke', label: 'Brücke', from: '2026-08-17', to: '2026-08-30' },
+  { key: 'BLOCK 2', label: 'Block 2', from: '2026-08-31', to: '2026-11-22' },
+  { key: 'GATE-Phase', label: 'Gate', from: '2026-11-23', to: '2026-12-27' },
+  { key: 'BLOCK 3', label: 'Block 3', from: '2026-12-28', to: '2027-02-28' },
+  { key: 'BLOCK 4', label: 'Block 4', from: '2027-03-01', to: '2027-04-18' },
+];
+var WEIGHT_TARGET = 72;
+
+function sessionKind(plan) {
+  var p = String(plan || '');
+  if (/^off/i.test(p)) return { key: 'off', short: 'Off', label: 'Ruhetag' };
+  if (/WETTKAMPF/i.test(p)) return { key: 'race', short: 'Rennen', label: 'Wettkampf' };
+  if (/GATE-TEST/i.test(p)) return { key: 'test', short: 'Test', label: 'Gate-Test' };
+  if (/LONG RUN/i.test(p)) return { key: 'lr', short: 'Long Run', label: 'Long Run' };
+  if (/Lauf 1/i.test(p)) return { key: 'run1', short: 'Lauf 1', label: 'Lauf 1, easy' };
+  if (/Lauf 2/i.test(p)) return { key: 'run2', short: 'Lauf 2', label: 'Lauf 2, easy' };
+  if (/KRAFT nur OBERK/i.test(p)) return { key: 'kraftO', short: 'Kraft OK', label: 'Kraft, nur Oberkörper' };
+  if (/KRAFT A/i.test(p)) return { key: 'kraftA', short: 'Kraft A', label: 'Kraft A, Ganzkörper schwer' };
+  if (/KRAFT B/i.test(p)) return { key: 'kraftB', short: 'Kraft B', label: 'Kraft B, Volumen und Core' };
+  if (/frei|Puffer/i.test(p)) return { key: 'buffer', short: 'Puffer', label: 'Freier Puffer' };
+  return { key: 'other', short: p.split(/[:—]/)[0].trim().slice(0, 10), label: p };
+}
+function isRunPlan(plan) { var k = sessionKind(plan).key; return k === 'lr' || k === 'run1' || k === 'run2' || k === 'race' || k === 'test'; }
+function isSession(plan) { var k = sessionKind(plan).key; return k !== 'off' && k !== 'buffer'; }
+function planKm(plan) { var m = String(plan || '').match(/(\d+[.,]\d+|\d+)\s*km/); return m ? parseFloat(m[1].replace(',', '.')) : null; }
+
+function derive(model) {
+  var today = todayISO();
+  var days = model.days;
+  var first = days[0].date, last = days[days.length - 1].date;
+  var anchor = days.filter(function (d) { return d.date === today; })[0];
+  if (!anchor) anchor = today < first ? days[0] : days[days.length - 1];
+
+  var week = anchor.week;
+  var weekPlan = model.weeks.filter(function (w) { return w.week === week; })[0] || null;
+  var weekDays = days.filter(function (d) { return d.week === week; });
+
+  var tendon = days.filter(function (d) { return d.sehnen != null; }).map(function (d) { return { date: d.date, v: d.sehnen }; });
+  var weight = days.filter(function (d) { return d.gewicht != null; }).map(function (d) { return { date: d.date, v: d.gewicht }; });
+  var runsDone = model.runs.filter(function (r) { return r.done; });
+
+  var kmByWeek = {};
+  runsDone.forEach(function (r) { kmByWeek[r.week] = (kmByWeek[r.week] || 0) + r.kmIst; });
+
+  /* Sehnen */
+  var t7 = tendon.slice(-7).map(function (x) { return x.v; });
+  var tPrev = tendon.slice(-14, -7).map(function (x) { return x.v; });
+  var last28 = tendon.filter(function (x) { return dayDiff(x.date, today) < 28 && dayDiff(x.date, today) >= 0; });
+  var streak = 0;
+  for (var i = tendon.length - 1; i >= 0 && tendon[i].v <= 2; i--) streak++;
+  var weekTendon = weekDays.filter(function (d) { return d.sehnen != null; }).map(function (d) { return d.sehnen; });
+  var tend = {
+    series: tendon,
+    latest: tendon[tendon.length - 1] || null,
+    mean7: mean(t7), meanPrev: mean(tPrev),
+    calm28: last28.filter(function (x) { return x.v <= 2; }).length, n28: last28.length,
+    streak: streak,
+    weekMax: weekTendon.length ? Math.max.apply(null, weekTendon) : null,
+    hotDays: t7.filter(function (v) { return v >= 3; }).length,
+    baseline: tendon.length ? Math.min.apply(null, tendon.slice(-28).map(function (x) { return x.v; })) : null,
+  };
+
+  /* Gewicht */
+  var w7 = weight.slice(-7).map(function (x) { return x.v; });
+  var wPrev = weight.slice(-14, -7).map(function (x) { return x.v; });
+  var wgt = {
+    series: weight,
+    latest: weight[weight.length - 1] || null,
+    mean7: mean(w7), meanPrev: mean(wPrev),
+    target: WEIGHT_TARGET,
+  };
+  var weeksLeft = Math.max(1, dayDiff(today, '2026-11-30') / 7);
+  wgt.toGo = wgt.mean7 != null ? wgt.mean7 - WEIGHT_TARGET : null;
+  wgt.rate = wgt.toGo != null ? wgt.toGo / weeksLeft : null;
+
+  /* Umsetzung. Krank ist ausgenommen: ausgefallen ja, aber nicht ausgelassen. */
+  var rated = days.filter(function (d) { return isSession(d.plan) && (d.done === true || d.done === false) && d.date <= today; });
+  var missed = days.filter(function (d) { return d.done === false; });
+  var openPast = days.filter(function (d) { return isSession(d.plan) && d.done == null && d.date < today && d.date >= first; });
+
+  /* Krankheit: zusammenhängende Krank-Tage bis heute, und die letzte Episode */
+  var sickDays = days.filter(function (d) { return d.done === 'sick'; });
+  var sickStreak = 0;
+  for (var si = days.length - 1; si >= 0; si--) {
+    if (days[si].date > today) continue;
+    if (days[si].done === 'sick') sickStreak++;
+    else if (days[si].done != null || days[si].date < today) break;
+  }
+  var lastSick = sickDays.length ? sickDays[sickDays.length - 1] : null;
+  var sinceSick = lastSick ? dayDiff(lastSick.date, today) : null;
+  var sickEpisode = 0;
+  if (lastSick) {
+    for (var sj = days.indexOf(lastSick); sj >= 0 && days[sj].done === 'sick'; sj--) sickEpisode++;
+  }
+
+  /* Läufe */
+  var longestLR = null, longest = null, bestPace = null;
+  runsDone.forEach(function (r) {
+    if (!longest || r.kmIst > longest.kmIst) longest = r;
+    if (/LONG RUN/i.test(r.typ) && (!longestLR || r.kmIst > longestLR.kmIst)) longestLR = r;
+    if (r.paceSec && (!bestPace || r.paceSec < bestPace.paceSec)) bestPace = r;
+  });
+  var last30 = runsDone.filter(function (r) { return dayDiff(r.date, today) <= 30 && dayDiff(r.date, today) >= 0; });
+  var max30 = last30.length ? Math.max.apply(null, last30.map(function (r) { return r.kmIst; })) : null;
+  var nextRun = model.runs.filter(function (r) { return !r.done && r.date >= today; })[0] || null;
+  var nextSpike = (nextRun && max30) ? (nextRun.kmSoll / max30 - 1) : null;
+
+  var runs = {
+    all: model.runs, done: runsDone,
+    totalKm: runsDone.reduce(function (s, r) { return s + r.kmIst; }, 0),
+    longest: longest, longestLR: longestLR, bestPace: bestPace,
+    kmByWeek: kmByWeek,
+    bestWeekKm: Object.keys(kmByWeek).length ? Math.max.apply(null, Object.keys(kmByWeek).map(function (k) { return kmByWeek[k]; })) : 0,
+    z3recent: mean(runsDone.slice(-3).map(function (r) { return r.z3; }).filter(function (v) { return v != null; })),
+    mhbSeries: runsDone.filter(function (r) { return r.mhb != null; }),
+    max30: max30, nextRun: nextRun, nextSpike: nextSpike,
+  };
+
+  /* Woche */
+  var weekRunsPlanned = weekDays.filter(function (d) { return isRunPlan(d.plan); });
+  var weekIst = kmByWeek[week] || 0;
+  var weekRunsDone = model.runs.filter(function (r) { return r.week === week && r.done; }).length;
+
+  /* Aktuelle Sehnen-Phase nach Kalender */
+  var phaseKey = 'PHASE 1';
+  var wIdx = model.weeks.map(function (w) { return w.week; }).indexOf(week);
+  var wNum = /^W(\d\d)$/.test(week) ? parseInt(week.slice(1), 10) : (/^G/.test(week) ? 99 : 0);
+  if (wNum >= 9 || /^G/.test(week)) phaseKey = 'PHASE 3';
+  else if (wNum >= 5) phaseKey = 'PHASE 2';
+
+  /* Gate-Fortschritt */
+  var gateProgress = [
+    { label: 'Beste Woche', now: runs.bestWeekKm, target: 25, unit: 'km', text: 'Beste Woche bisher ' + nf(runs.bestWeekKm) + ' km von 25' },
+    { label: 'Längster Long Run', now: longestLR ? longestLR.kmIst : 0, target: 11.6, unit: 'km', text: longestLR ? 'Längster Long Run ' + nf(longestLR.kmIst, 2) + ' km von 11,6' : 'Noch kein Long Run erfasst' },
+    { label: 'Sehnen still', now: tend.calm28, target: 28, unit: 'Tage', text: 'Ruhige Tage in den letzten 28: ' + tend.calm28 + ', aktuelle Serie ' + tend.streak },
+    // Das Kriterium ist 6:15 pro km ÜBER 10 km. Nur die Pace zu vergleichen
+    // überschätzt den Stand, deshalb zusätzlich mit der Distanz gewichtet.
+    {
+      label: 'Tempo-Reserve',
+      now: bestPace ? clamp(375 / bestPace.paceSec, 0, 1.2) * clamp(bestPace.kmIst / 10, 0, 1) * 100 : 0,
+      target: 100, unit: '%',
+      text: bestPace
+        ? 'Schnellste Pace ' + pace(bestPace.paceSec) + ' pro km über ' + nf(bestPace.kmIst, 1) + ' km. Gefordert sind 6:15 über 10 km.'
+        : 'Noch kein Lauf erfasst',
+    },
+  ];
+
+  return {
+    today: today, anchor: anchor, week: week, weekPlan: weekPlan, weekDays: weekDays,
+    weekIst: weekIst, weekRunsPlanned: weekRunsPlanned.length, weekRunsDone: weekRunsDone,
+    tend: tend, wgt: wgt, runs: runs,
+    adherence: rated.length ? rated.filter(function (d) { return d.done === true; }).length / rated.length : null,
+    ratedCount: rated.length, missed: missed, openPast: openPast,
+    sick: { streak: sickStreak, episode: sickEpisode, sinceLast: sinceSick, last: lastSick, active: sickStreak > 0 },
+    daysToRace: dayDiff(today, RACE_DAY), daysToGate: dayDiff(today, GATE_DAY),
+    phaseKey: phaseKey, weekIndex: wIdx,
+    gateProgress: gateProgress,
+    phase: PHASES.filter(function (p) { return today >= p.from && today <= p.to; })[0] || PHASES[0],
+  };
+}
+
+/* ============================================================================
+   Athletic Training — Kern: Formate, Datenschicht, Ableitungen, Physik, Diagramme
+   ========================================================================= */
+'use strict';
+
+/* ---------------------------------------------------------------- Helfer -- */
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/\s*·\s*/g, ', ')
+    .replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; });
+}
+/** Wie esc, lässt aber die <strong>-Auszeichnung aus info.js durch. */
+function escRich(s) {
+  return esc(s).replace(/&lt;strong&gt;/g, '<strong>').replace(/&lt;\/strong&gt;/g, '</strong>');
+}
 function stamp(iso) {
   if (!iso) return '';
   try {
@@ -1355,175 +1535,6 @@ function isOffline(err) {
   if (c === 'blocked' || c === 'bad_key' || c === 'not_setup' || c === 'locked') return false;
   if (!navigator.onLine) return true;
   return (typeof c === 'string' && c.indexOf('http_5') === 0);
-}
-
-/* ========================================================================== */
-/*  Ableitungen                                                               */
-/* ========================================================================== */
-
-var RACE_DAY = '2027-04-18';
-var GATE_DAY = '2026-12-31';
-var GATE_CHECK = '2026-12-28';
-var PHASES = [
-  { key: 'Brücke', label: 'Brücke', from: '2026-08-17', to: '2026-08-30' },
-  { key: 'BLOCK 2', label: 'Block 2', from: '2026-08-31', to: '2026-11-22' },
-  { key: 'GATE-Phase', label: 'Gate', from: '2026-11-23', to: '2026-12-27' },
-  { key: 'BLOCK 3', label: 'Block 3', from: '2026-12-28', to: '2027-02-28' },
-  { key: 'BLOCK 4', label: 'Block 4', from: '2027-03-01', to: '2027-04-18' },
-];
-var WEIGHT_TARGET = 72;
-
-function sessionKind(plan) {
-  var p = String(plan || '');
-  if (/^off/i.test(p)) return { key: 'off', short: 'Off', label: 'Ruhetag' };
-  if (/WETTKAMPF/i.test(p)) return { key: 'race', short: 'Rennen', label: 'Wettkampf' };
-  if (/GATE-TEST/i.test(p)) return { key: 'test', short: 'Test', label: 'Gate-Test' };
-  if (/LONG RUN/i.test(p)) return { key: 'lr', short: 'Long Run', label: 'Long Run' };
-  if (/Lauf 1/i.test(p)) return { key: 'run1', short: 'Lauf 1', label: 'Lauf 1, easy' };
-  if (/Lauf 2/i.test(p)) return { key: 'run2', short: 'Lauf 2', label: 'Lauf 2, easy' };
-  if (/KRAFT nur OBERK/i.test(p)) return { key: 'kraftO', short: 'Kraft OK', label: 'Kraft, nur Oberkörper' };
-  if (/KRAFT A/i.test(p)) return { key: 'kraftA', short: 'Kraft A', label: 'Kraft A, Ganzkörper schwer' };
-  if (/KRAFT B/i.test(p)) return { key: 'kraftB', short: 'Kraft B', label: 'Kraft B, Volumen und Core' };
-  if (/frei|Puffer/i.test(p)) return { key: 'buffer', short: 'Puffer', label: 'Freier Puffer' };
-  return { key: 'other', short: p.split(/[:—]/)[0].trim().slice(0, 10), label: p };
-}
-function isRunPlan(plan) { var k = sessionKind(plan).key; return k === 'lr' || k === 'run1' || k === 'run2' || k === 'race' || k === 'test'; }
-function isSession(plan) { var k = sessionKind(plan).key; return k !== 'off' && k !== 'buffer'; }
-function planKm(plan) { var m = String(plan || '').match(/(\d+[.,]\d+|\d+)\s*km/); return m ? parseFloat(m[1].replace(',', '.')) : null; }
-
-function derive(model) {
-  var today = todayISO();
-  var days = model.days;
-  var first = days[0].date, last = days[days.length - 1].date;
-  var anchor = days.filter(function (d) { return d.date === today; })[0];
-  if (!anchor) anchor = today < first ? days[0] : days[days.length - 1];
-
-  var week = anchor.week;
-  var weekPlan = model.weeks.filter(function (w) { return w.week === week; })[0] || null;
-  var weekDays = days.filter(function (d) { return d.week === week; });
-
-  var tendon = days.filter(function (d) { return d.sehnen != null; }).map(function (d) { return { date: d.date, v: d.sehnen }; });
-  var weight = days.filter(function (d) { return d.gewicht != null; }).map(function (d) { return { date: d.date, v: d.gewicht }; });
-  var runsDone = model.runs.filter(function (r) { return r.done; });
-
-  var kmByWeek = {};
-  runsDone.forEach(function (r) { kmByWeek[r.week] = (kmByWeek[r.week] || 0) + r.kmIst; });
-
-  /* Sehnen */
-  var t7 = tendon.slice(-7).map(function (x) { return x.v; });
-  var tPrev = tendon.slice(-14, -7).map(function (x) { return x.v; });
-  var last28 = tendon.filter(function (x) { return dayDiff(x.date, today) < 28 && dayDiff(x.date, today) >= 0; });
-  var streak = 0;
-  for (var i = tendon.length - 1; i >= 0 && tendon[i].v <= 2; i--) streak++;
-  var weekTendon = weekDays.filter(function (d) { return d.sehnen != null; }).map(function (d) { return d.sehnen; });
-  var tend = {
-    series: tendon,
-    latest: tendon[tendon.length - 1] || null,
-    mean7: mean(t7), meanPrev: mean(tPrev),
-    calm28: last28.filter(function (x) { return x.v <= 2; }).length, n28: last28.length,
-    streak: streak,
-    weekMax: weekTendon.length ? Math.max.apply(null, weekTendon) : null,
-    hotDays: t7.filter(function (v) { return v >= 3; }).length,
-    baseline: tendon.length ? Math.min.apply(null, tendon.slice(-28).map(function (x) { return x.v; })) : null,
-  };
-
-  /* Gewicht */
-  var w7 = weight.slice(-7).map(function (x) { return x.v; });
-  var wPrev = weight.slice(-14, -7).map(function (x) { return x.v; });
-  var wgt = {
-    series: weight,
-    latest: weight[weight.length - 1] || null,
-    mean7: mean(w7), meanPrev: mean(wPrev),
-    target: WEIGHT_TARGET,
-  };
-  var weeksLeft = Math.max(1, dayDiff(today, '2026-11-30') / 7);
-  wgt.toGo = wgt.mean7 != null ? wgt.mean7 - WEIGHT_TARGET : null;
-  wgt.rate = wgt.toGo != null ? wgt.toGo / weeksLeft : null;
-
-  /* Umsetzung. Krank ist ausgenommen: ausgefallen ja, aber nicht ausgelassen. */
-  var rated = days.filter(function (d) { return isSession(d.plan) && (d.done === true || d.done === false) && d.date <= today; });
-  var missed = days.filter(function (d) { return d.done === false; });
-  var openPast = days.filter(function (d) { return isSession(d.plan) && d.done == null && d.date < today && d.date >= first; });
-
-  /* Krankheit: zusammenhängende Krank-Tage bis heute, und die letzte Episode */
-  var sickDays = days.filter(function (d) { return d.done === 'sick'; });
-  var sickStreak = 0;
-  for (var si = days.length - 1; si >= 0; si--) {
-    if (days[si].date > today) continue;
-    if (days[si].done === 'sick') sickStreak++;
-    else if (days[si].done != null || days[si].date < today) break;
-  }
-  var lastSick = sickDays.length ? sickDays[sickDays.length - 1] : null;
-  var sinceSick = lastSick ? dayDiff(lastSick.date, today) : null;
-  var sickEpisode = 0;
-  if (lastSick) {
-    for (var sj = days.indexOf(lastSick); sj >= 0 && days[sj].done === 'sick'; sj--) sickEpisode++;
-  }
-
-  /* Läufe */
-  var longestLR = null, longest = null, bestPace = null;
-  runsDone.forEach(function (r) {
-    if (!longest || r.kmIst > longest.kmIst) longest = r;
-    if (/LONG RUN/i.test(r.typ) && (!longestLR || r.kmIst > longestLR.kmIst)) longestLR = r;
-    if (r.paceSec && (!bestPace || r.paceSec < bestPace.paceSec)) bestPace = r;
-  });
-  var last30 = runsDone.filter(function (r) { return dayDiff(r.date, today) <= 30 && dayDiff(r.date, today) >= 0; });
-  var max30 = last30.length ? Math.max.apply(null, last30.map(function (r) { return r.kmIst; })) : null;
-  var nextRun = model.runs.filter(function (r) { return !r.done && r.date >= today; })[0] || null;
-  var nextSpike = (nextRun && max30) ? (nextRun.kmSoll / max30 - 1) : null;
-
-  var runs = {
-    all: model.runs, done: runsDone,
-    totalKm: runsDone.reduce(function (s, r) { return s + r.kmIst; }, 0),
-    longest: longest, longestLR: longestLR, bestPace: bestPace,
-    kmByWeek: kmByWeek,
-    bestWeekKm: Object.keys(kmByWeek).length ? Math.max.apply(null, Object.keys(kmByWeek).map(function (k) { return kmByWeek[k]; })) : 0,
-    z3recent: mean(runsDone.slice(-3).map(function (r) { return r.z3; }).filter(function (v) { return v != null; })),
-    mhbSeries: runsDone.filter(function (r) { return r.mhb != null; }),
-    max30: max30, nextRun: nextRun, nextSpike: nextSpike,
-  };
-
-  /* Woche */
-  var weekRunsPlanned = weekDays.filter(function (d) { return isRunPlan(d.plan); });
-  var weekIst = kmByWeek[week] || 0;
-  var weekRunsDone = model.runs.filter(function (r) { return r.week === week && r.done; }).length;
-
-  /* Aktuelle Sehnen-Phase nach Kalender */
-  var phaseKey = 'PHASE 1';
-  var wIdx = model.weeks.map(function (w) { return w.week; }).indexOf(week);
-  var wNum = /^W(\d\d)$/.test(week) ? parseInt(week.slice(1), 10) : (/^G/.test(week) ? 99 : 0);
-  if (wNum >= 9 || /^G/.test(week)) phaseKey = 'PHASE 3';
-  else if (wNum >= 5) phaseKey = 'PHASE 2';
-
-  /* Gate-Fortschritt */
-  var gateProgress = [
-    { label: 'Beste Woche', now: runs.bestWeekKm, target: 25, unit: 'km', text: 'Beste Woche bisher ' + nf(runs.bestWeekKm) + ' km von 25' },
-    { label: 'Längster Long Run', now: longestLR ? longestLR.kmIst : 0, target: 11.6, unit: 'km', text: longestLR ? 'Längster Long Run ' + nf(longestLR.kmIst, 2) + ' km von 11,6' : 'Noch kein Long Run erfasst' },
-    { label: 'Sehnen still', now: tend.calm28, target: 28, unit: 'Tage', text: 'Ruhige Tage in den letzten 28: ' + tend.calm28 + ', aktuelle Serie ' + tend.streak },
-    // Das Kriterium ist 6:15 pro km ÜBER 10 km. Nur die Pace zu vergleichen
-    // überschätzt den Stand, deshalb zusätzlich mit der Distanz gewichtet.
-    {
-      label: 'Tempo-Reserve',
-      now: bestPace ? clamp(375 / bestPace.paceSec, 0, 1.2) * clamp(bestPace.kmIst / 10, 0, 1) * 100 : 0,
-      target: 100, unit: '%',
-      text: bestPace
-        ? 'Schnellste Pace ' + pace(bestPace.paceSec) + ' pro km über ' + nf(bestPace.kmIst, 1) + ' km. Gefordert sind 6:15 über 10 km.'
-        : 'Noch kein Lauf erfasst',
-    },
-  ];
-
-  return {
-    today: today, anchor: anchor, week: week, weekPlan: weekPlan, weekDays: weekDays,
-    weekIst: weekIst, weekRunsPlanned: weekRunsPlanned.length, weekRunsDone: weekRunsDone,
-    tend: tend, wgt: wgt, runs: runs,
-    adherence: rated.length ? rated.filter(function (d) { return d.done === true; }).length / rated.length : null,
-    ratedCount: rated.length, missed: missed, openPast: openPast,
-    sick: { streak: sickStreak, episode: sickEpisode, sinceLast: sinceSick, last: lastSick, active: sickStreak > 0 },
-    daysToRace: dayDiff(today, RACE_DAY), daysToGate: dayDiff(today, GATE_DAY),
-    phaseKey: phaseKey, weekIndex: wIdx,
-    gateProgress: gateProgress,
-    phase: PHASES.filter(function (p) { return today >= p.from && today <= p.to; })[0] || PHASES[0],
-  };
 }
 
 /* Farbe für einen Sehnenwert aus der Severity-Rampe */
@@ -3127,7 +3138,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T15:16:59.488Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T20:34:04.400Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

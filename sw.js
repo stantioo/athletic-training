@@ -1,7 +1,7 @@
 /* Wien 2027 — Service Worker.
    Die Hülle liegt im Cache, damit die App offline startet und den eingebauten
    Stand zeigt. Daten holt die App danach selbst aus dem Apps Script. */
-const CACHE = 'w27-202609101351';
+const CACHE = 'w27-202609101353';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

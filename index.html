@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="description" content="Trainings-App für den Vienna City Marathon 2027.">
+<meta name="description" content="Persönliche Trainings-App.">
 <meta name="theme-color" content="#1B0810">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Wien 2027">
+<meta name="apple-mobile-web-app-title" content="Athletic Training">
 <meta name="robots" content="noindex, nofollow">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-<title>Wien 2027</title>
+<title>Athletic Training</title>
 <style>html,body{margin:0;background:#150609;color-scheme:dark}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
-<script>window.W27_PWA=true;window.W27_APP_URL="https://stantioo.github.io/wien2027-app/";</script>
+<script>window.W27_PWA=true;window.W27_APP_URL="https://stantioo.github.io/athletic-training/";</script>
 <style>
 /* ============================================================================
-   Wien 2027 — Design-System
+   Athletic Training — Design-System
    Nachbau des Vokabulars aus den Referenz-Screenshots, in Weinrot:
    tiefer Farbverlauf als Grund, Glaskarten darauf, Verlaufs-Hero mit
    Aktionsreihe, 2x2-Kennzahlkacheln mit Icon-Chip, fette Sektionstitel
@@ -786,7 +786,7 @@ pre { padding: var(--s3); overflow-x: auto; white-space: pre; line-height: 1.5; 
   <header class="nav">
     <div class="nav-inner">
       <div class="nav-titles">
-        <h1 id="navTitle">Wien 2027</h1>
+        <h1 id="navTitle">Athletic Training</h1>
         <p class="sub" id="navSub">Vienna City Marathon, 18. April 2027</p>
       </div>
       <div class="nav-actions">
@@ -826,7 +826,7 @@ pre { padding: var(--s3); overflow-x: auto; white-space: pre; line-height: 1.5; 
 
 <script>
 /* ============================================================================
-   Wien 2027 — Sheet-Parser
+   Athletic Training — Sheet-Parser
    Wandelt das Trainings-Workbook in das App-Modell.
    Läuft in drei Umgebungen mit derselben Logik:
      - Node (Build, SheetJS aus xlsx)
@@ -1183,7 +1183,7 @@ var INFO = {};   // wird nach dem Verbinden aus dem Apps Script geladen
 </script>
 <script>
 /* ============================================================================
-   Wien 2027 — Kern: Formate, Datenschicht, Ableitungen, Physik, Diagramme
+   Athletic Training — Kern: Formate, Datenschicht, Ableitungen, Physik, Diagramme
    ========================================================================= */
 'use strict';
 
@@ -2270,7 +2270,7 @@ function spikeGauge(el, D) {
 </script>
 <script>
 /* ============================================================================
-   Wien 2027 — Ansichten, Detail-Blätter, Eingabe-Formulare
+   Athletic Training — Ansichten, Detail-Blätter, Eingabe-Formulare
    Aufbau nach den Referenz-Screenshots: Verlaufs-Hero mit Aktionsreihe,
    fette Sektionstitel außerhalb der Karten, 2x2-Kennzahlkacheln mit
    Icon-Chip, Listenzeilen mit führendem Kreis, schwebender Aktionsknopf.
@@ -3337,7 +3337,7 @@ function viewWelcome() {
 function render() {
   var m = Store.model;
   if (!m) {
-    $('#navTitle').textContent = 'Wien 2027';
+    $('#navTitle').textContent = 'Athletic Training';
     $('#navSub').textContent = 'Noch nicht verbunden';
     $('#view').innerHTML = viewWelcome();
     $('#tabbar').parentNode.hidden = true;
@@ -3348,7 +3348,7 @@ function render() {
   var D = App.D;
 
   var titles = {
-    heute: ['Wien 2027', 'Vienna City Marathon, 18. April 2027'],
+    heute: ['Athletic Training', 'Vienna City Marathon, 18. April 2027'],
     woche: ['Woche ' + D.week, D.weekPlan ? D.weekPlan.phase + ', ' + D.weekPlan.datum : ''],
     laufe: ['Läufe', D.runs.done.length + ' erfasst, ' + nf(D.runs.totalKm) + ' km'],
     kraft: ['Kraft', 'Woche ' + D.week + ', Double Progression'],
@@ -3500,7 +3500,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Wien 2027","built":"2026-09-10T13:54:05.700Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T14:04:45.468Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

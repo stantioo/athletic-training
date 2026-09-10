@@ -1,7 +1,7 @@
 {
-  "name": "Wien 2027",
-  "short_name": "Wien 2027",
-  "description": "Trainings-App für den Vienna City Marathon am 18. April 2027.",
+  "name": "Athletic Training",
+  "short_name": "Athletic Training",
+  "description": "Persönliche Trainings-App, verbunden mit der eigenen Trainings-Tabelle.",
   "lang": "de",
   "start_url": ".",
   "scope": ".",

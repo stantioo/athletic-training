@@ -3256,7 +3256,7 @@ function openSetup(lead) {
     '<div class="field"><label>Web-App-URL des Apps Script</label>' +
     '<input class="input" id="cUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(cfg.url || '') + '"></div>' +
     '<div class="field"><label>Zugangscode</label>' +
-    '<input class="input mono" id="cKey" type="text" autocapitalize="characters" placeholder="ABCD-1234" value="' + esc(cfg.key || '') + '"></div>' +
+    '<input class="input mono" id="cKey" type="text" autocapitalize="characters" placeholder="ABCD-1234-EFGH" value="' + esc(cfg.key || '') + '"></div>' +
     '<div id="cTest"></div>' +
     '<div class="block"><div class="eyebrow">So richtest du es ein, einmalig</div>' +
     '<ol class="steps">' +
@@ -3524,7 +3524,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T14:24:35.864Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T14:32:39.336Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

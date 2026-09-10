@@ -2732,6 +2732,9 @@ function viewPlan(D, m) {
   h += card('<div class="dl">' +
     '<div><dt>Quelle</dt><dd>' + (Store.source === 'script' ? 'Google Tabelle, live' : Store.source === 'cache' ? 'Zwischenspeicher' : 'Eingebauter Stand') + '</dd></div>' +
     '<div><dt>Stand</dt><dd>' + esc(stamp(Store.meta && (Store.meta.modifiedTime || Store.meta.fetchedAt)) || '–') + '</dd></div>' +
+    (Store.meta && Store.meta.version ? '<div><dt>Script-Version</dt><dd>' + esc(Store.meta.version) + '</dd></div>' : '') +
+    (Store.meta && Store.meta.contentVersion !== undefined
+      ? '<div><dt>Erklärtexte</dt><dd>' + (Store.meta.contentVersion ? 'vorhanden' : 'fehlen im Script') + '</dd></div>' : '') +
     (Store.queue.length ? '<div><dt>Wartet auf Versand</dt><dd>' + Store.queue.length + '</dd></div>' : '') +
     '</div>' +
     '<button class="btn wide" style="margin-top:14px" type="button" data-act="setup">' + IC.gear + (Store.canWrite() ? 'Einstellungen' : 'Jetzt verbinden') + '</button>' +
@@ -3305,6 +3308,10 @@ function openSetup(lead) {
           if (err && err.code === 'bad_key') msg = 'Der Zugangscode passt nicht. Im Apps Script die Funktion showAccess ausführen, dort steht er.';
           if (err && err.code === 'not_setup') msg = 'Im Apps Script fehlt noch der Lauf von setup. Einmal ausführen, dann hier erneut verbinden.';
           if (err && err.code === 'locked') msg = 'Zu viele Versuche mit falschem Code. Eine Minute warten, dann nochmal.';
+          if (/is not defined/.test(msg)) {
+            msg = 'Die Bereitstellung läuft noch auf einer älteren Fassung des Scripts. Im Apps Script: ' +
+              'Bereitstellen, Bereitstellungen verwalten, Stift, Version auf Neu, Bereitstellen. Die URL bleibt gleich.';
+          }
           out.innerHTML = '<div class="banner">' + IC.warn + '<div>' + esc(msg) + '</div></div>';
         });
       });
@@ -3524,7 +3531,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T14:32:39.336Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T14:40:58.435Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

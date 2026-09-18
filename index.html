@@ -1197,7 +1197,9 @@ function forecast(runsDone, today) {
     cands.sort(function (a, b) { return a.paceSec - b.paceSec; });
     if (cands.length) { anchor = cands[0]; out.basisKind = 'training'; }
   }
-  if (anchor) {
+  // Zeiten für 5 km bis Marathon nur aus einem echten Rennen. Ein lockerer
+  // Trainingslauf ist kein Maximalversuch und ergäbe absurd langsame Zahlen.
+  if (anchor && out.basisKind === 'race') {
     out.basisDate = anchor.date; out.basisKm = anchor.kmIst; out.basisSec = anchor.sec;
     var distM = anchor.kmIst * 1000;
     out.vdot = Math.round(vdotFrom(distM, anchor.sec) * 10) / 10;
@@ -3233,7 +3235,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-18T11:27:34.403Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-18T11:30:42.498Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

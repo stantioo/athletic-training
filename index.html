@@ -1152,6 +1152,80 @@ function isRunPlan(plan) { var k = sessionKind(plan).key; return k === 'lr' || k
 function isSession(plan) { var k = sessionKind(plan).key; return k !== 'off' && k !== 'buffer'; }
 function planKm(plan) { var m = String(plan || '').match(/(\d+[.,]\d+|\d+)\s*km/); return m ? parseFloat(m[1].replace(',', '.')) : null; }
 
+/* ------------------------------------------------------------ Prognose -- */
+/*
+  Drei Modelle, jedes mit eigener Schwäche, deshalb als Spanne:
+  - Daniels/Gilbert (VDOT): aus einem Rennen den Sauerstoffbedarf schätzen und
+    daraus die anderen Distanzen rechnen. So rechnet auch Garmin, nur dass die
+    Uhr VO2max aus Puls und Tempo schätzt. Für den Marathon zu optimistisch.
+  - Riegel mit Ermüdungsfaktor 1,15 für den Marathon: Vickers und Vertosick
+    (2016) fanden, dass 1,06 bei Freizeitläufern um 10 Minuten und mehr zu
+    schnell ist, und zwar umso mehr, je weniger Wochenkilometer.
+  - Tanda (2011): nur aus dem Training der letzten acht Wochen, Wochenkilometer
+    und Trainingstempo. Das ist die ehrlichste Zahl für den Marathon.
+*/
+var DIST = { k5: 5000, k10: 10000, hm: 21097.5, m: 42195 };
+var SUB4_PACE = 341;   // Sekunden pro km für 3:59:59
+
+function vo2AtSpeed(vMin) { return -4.60 + 0.182258 * vMin + 0.000104 * vMin * vMin; }
+function pctVo2max(tMin) { return 0.8 + 0.1894393 * Math.exp(-0.012778 * tMin) + 0.2989558 * Math.exp(-0.1932605 * tMin); }
+function vdotFrom(distM, sec) { var t = sec / 60; return vo2AtSpeed(distM / t) / pctVo2max(t); }
+function danielsTime(vdot, distM) {
+  // Bisektion über die Dauer in Minuten; der Ausdruck fällt monoton mit t.
+  var lo = distM / 500, hi = distM / 80;
+  for (var i = 0; i < 60; i++) {
+    var mid = (lo + hi) / 2;
+    var f = vo2AtSpeed(distM / mid) / pctVo2max(mid) - vdot;
+    if (f > 0) lo = mid; else hi = mid;
+  }
+  return Math.round((lo + hi) / 2 * 60);
+}
+function riegel(sec, d1, d2, k) { return Math.round(sec * Math.pow(d2 / d1, k)); }
+function tandaPace(K, P) { return 17.1 + 140.0 * Math.exp(-0.0053 * K) + 0.55 * P; }
+
+function forecast(runsDone, today) {
+  var out = { basisKind: null, basisDate: null, basisKm: null, basisSec: null, vdot: null,
+    k5: null, k10: null, hm: null, mDaniels: null, mRiegel: null, mTanda: null,
+    tandaK: null, tandaP: null, tandaRuns: 0, sub4K: null, sub4P: null };
+
+  /* Anker: letzter Wettkampf oder Gate-Test, sonst der schnellste Lauf ab 3 km */
+  var races = runsDone.filter(function (r) { return /WETTKAMPF|GATE-TEST/i.test(r.typ) && r.paceSec && r.kmIst >= 3; });
+  var anchor = races.length ? races[races.length - 1] : null;
+  if (anchor) out.basisKind = 'race';
+  else {
+    var cands = runsDone.filter(function (r) { return r.paceSec && r.kmIst >= 3; });
+    cands.sort(function (a, b) { return a.paceSec - b.paceSec; });
+    if (cands.length) { anchor = cands[0]; out.basisKind = 'training'; }
+  }
+  if (anchor) {
+    out.basisDate = anchor.date; out.basisKm = anchor.kmIst; out.basisSec = anchor.sec;
+    var distM = anchor.kmIst * 1000;
+    out.vdot = Math.round(vdotFrom(distM, anchor.sec) * 10) / 10;
+    out.k5 = danielsTime(out.vdot, DIST.k5);
+    out.k10 = danielsTime(out.vdot, DIST.k10);
+    out.hm = danielsTime(out.vdot, DIST.hm);
+    out.mDaniels = danielsTime(out.vdot, DIST.m);
+    out.mRiegel = riegel(anchor.sec, distM, DIST.m, 1.15);
+  }
+
+  /* Tanda aus den letzten acht Wochen: Wochenkilometer und Trainingstempo */
+  var recent = runsDone.filter(function (r) { var d = dayDiff(r.date, today); return d >= 0 && d < 56 && r.kmIst && r.sec; });
+  out.tandaRuns = recent.length;
+  if (recent.length >= 4) {
+    var km = recent.reduce(function (s, r) { return s + r.kmIst; }, 0);
+    var sec = recent.reduce(function (s, r) { return s + r.sec; }, 0);
+    var K = km / 8, P = sec / km;
+    out.tandaK = Math.round(K * 10) / 10;
+    out.tandaP = Math.round(P);
+    out.mTanda = Math.round(tandaPace(K, P) * 42.195);
+    // Was Sub 4 bräuchte: einmal mehr Kilometer bei diesem Tempo, einmal schnelleres Tempo bei diesen Kilometern
+    var rest = (SUB4_PACE - 17.1 - 0.55 * P) / 140.0;
+    out.sub4K = rest > 0 ? Math.round(-Math.log(rest) / 0.0053) : null;
+    out.sub4P = Math.round((SUB4_PACE - 17.1 - 140.0 * Math.exp(-0.0053 * K)) / 0.55);
+  }
+  return out;
+}
+
 function derive(model) {
   var today = todayISO();
   var days = model.days;
@@ -1283,6 +1357,7 @@ function derive(model) {
     daysToRace: dayDiff(today, RACE_DAY), daysToGate: dayDiff(today, GATE_DAY),
     phaseKey: phaseKey, weekIndex: wIdx,
     gateProgress: gateProgress,
+    forecast: forecast(runsDone, today),
     phase: PHASES.filter(function (p) { return today >= p.from && today <= p.to; })[0] || PHASES[0],
   };
 }
@@ -2508,6 +2583,26 @@ function viewPlan(D, m) {
     '<button class="act" type="button" data-info="gate">' + IC.gateF + '<span>Kriterien</span></button>' +
     '<button class="act" type="button" data-info="evidenz">' + IC.book + '<span>Alle Belege</span></button></div></section>';
 
+  var F = D.forecast;
+  if (F) {
+    h += sec('Prognose', 'Wie gerechnet', 'data-info="prognose"');
+    var rows = '';
+    if (F.basisKind === 'race') {
+      rows += '<div><dt>5 km</dt><dd>' + dur(F.k5) + '</dd></div><div><dt>10 km</dt><dd>' + dur(F.k10) + '</dd></div><div><dt>Halbmarathon</dt><dd>' + dur(F.hm) + '</dd></div>';
+    }
+    var ms = [F.mDaniels, F.mRiegel, F.mTanda].filter(function (x) { return x; });
+    if (ms.length) rows += '<div><dt>Marathon</dt><dd>' + dur(Math.min.apply(null, ms)) + (ms.length > 1 ? ' bis ' + dur(Math.max.apply(null, ms)) : '') + '</dd></div>';
+    var note = F.basisKind === 'race'
+      ? 'Basis: ' + nf(F.basisKm, 1) + ' km am ' + dShort(F.basisDate) + ' in ' + dur(F.basisSec) + '. Marathon als Spanne aus Daniels, Riegel 1,15 und Tanda. '
+      : 'Für 5 km bis Halbmarathon braucht die Prognose ein Rennen oder einen Gate-Test in der Tabelle. ';
+    if (F.mTanda) {
+      note += 'Marathon aus dem Training der letzten acht Wochen: ' + nf(F.tandaK, 1) + ' km pro Woche bei ' + pace(F.tandaP) + ' pro km.';
+      note += F.sub4K ? ' Sub 4 bräuchte bei diesem Tempo ' + F.sub4K + ' km pro Woche, oder bei diesen Kilometern ' + pace(F.sub4P) + ' pro km.'
+                      : ' Sub 4 geht bei diesem Tempo mit keinem Volumen, das Trainingstempo müsste auf ' + pace(F.sub4P) + ' pro km.';
+    }
+    h += card('<div class="dl">' + rows + '</div><p class="prose" style="margin-top:10px;font-size:13.5px">' + esc(note) + '</p>');
+  }
+
   h += sec('Stand heute', 'Mehr', 'data-info="gate"');
   h += tapCard(g.kriterien.map(function (k, i) {
     var p = D.gateProgress[i], pct = p ? clamp(p.now / p.target * 100, 0, 100) : 0;
@@ -3138,7 +3233,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-18T08:32:29.607Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-18T11:27:34.403Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

@@ -1185,47 +1185,167 @@ function tandaPace(K, P) { return 17.1 + 140.0 * Math.exp(-0.0053 * K) + 0.55 * 
 
 function forecast(runsDone, today) {
   var out = { basisKind: null, basisDate: null, basisKm: null, basisSec: null, vdot: null,
-    k5: null, k10: null, hm: null, mDaniels: null, mRiegel: null, mTanda: null,
-    tandaK: null, tandaP: null, tandaRuns: 0, sub4K: null, sub4P: null };
+    k5: null, k10: null, hm: null, m: null,
+    tandaK: null, tandaP: null, tandaRuns: 0, sub4K: null, sub4P: null, note: '' };
+  function range(a, b) { var xs = [a, b].filter(function (x) { return x; }); return xs.length ? { lo: Math.min.apply(null, xs), hi: Math.max.apply(null, xs) } : null; }
 
-  /* Anker: letzter Wettkampf oder Gate-Test, sonst der schnellste Lauf ab 3 km */
+  /* Weg 1: aus dem letzten Wettkampf oder Gate-Test (Daniels), Marathon zusätzlich Riegel 1,15 */
   var races = runsDone.filter(function (r) { return /WETTKAMPF|GATE-TEST/i.test(r.typ) && r.paceSec && r.kmIst >= 3; });
-  var anchor = races.length ? races[races.length - 1] : null;
-  if (anchor) out.basisKind = 'race';
-  else {
-    var cands = runsDone.filter(function (r) { return r.paceSec && r.kmIst >= 3; });
-    cands.sort(function (a, b) { return a.paceSec - b.paceSec; });
-    if (cands.length) { anchor = cands[0]; out.basisKind = 'training'; }
-  }
-  // Zeiten für 5 km bis Marathon nur aus einem echten Rennen. Ein lockerer
-  // Trainingslauf ist kein Maximalversuch und ergäbe absurd langsame Zahlen.
-  if (anchor && out.basisKind === 'race') {
-    out.basisDate = anchor.date; out.basisKm = anchor.kmIst; out.basisSec = anchor.sec;
-    var distM = anchor.kmIst * 1000;
-    out.vdot = Math.round(vdotFrom(distM, anchor.sec) * 10) / 10;
-    out.k5 = danielsTime(out.vdot, DIST.k5);
-    out.k10 = danielsTime(out.vdot, DIST.k10);
-    out.hm = danielsTime(out.vdot, DIST.hm);
-    out.mDaniels = danielsTime(out.vdot, DIST.m);
-    out.mRiegel = riegel(anchor.sec, distM, DIST.m, 1.15);
+  var race = races.length ? races[races.length - 1] : null;
+  var d5 = null, d10 = null, dhm = null, dm = null, rm = null;
+  if (race) {
+    out.basisKind = 'race'; out.basisDate = race.date; out.basisKm = race.kmIst; out.basisSec = race.sec;
+    var distM = race.kmIst * 1000;
+    out.vdot = Math.round(vdotFrom(distM, race.sec) * 10) / 10;
+    d5 = danielsTime(out.vdot, DIST.k5); d10 = danielsTime(out.vdot, DIST.k10);
+    dhm = danielsTime(out.vdot, DIST.hm); dm = danielsTime(out.vdot, DIST.m);
+    rm = riegel(race.sec, distM, DIST.m, 1.15);
   }
 
-  /* Tanda aus den letzten acht Wochen: Wochenkilometer und Trainingstempo */
+  /* Weg 2: aus dem Training der letzten acht Wochen (Tanda), kürzere Distanzen mit Riegel 1,06 abgeleitet */
   var recent = runsDone.filter(function (r) { var d = dayDiff(r.date, today); return d >= 0 && d < 56 && r.kmIst && r.sec; });
   out.tandaRuns = recent.length;
+  var t5 = null, t10 = null, thm = null, tm = null;
   if (recent.length >= 4) {
     var km = recent.reduce(function (s, r) { return s + r.kmIst; }, 0);
     var sec = recent.reduce(function (s, r) { return s + r.sec; }, 0);
     var K = km / 8, P = sec / km;
     out.tandaK = Math.round(K * 10) / 10;
     out.tandaP = Math.round(P);
-    out.mTanda = Math.round(tandaPace(K, P) * 42.195);
-    // Was Sub 4 bräuchte: einmal mehr Kilometer bei diesem Tempo, einmal schnelleres Tempo bei diesen Kilometern
+    tm = Math.round(tandaPace(K, P) * 42.195);
+    t5 = riegel(tm, DIST.m, DIST.k5, 1.06); t10 = riegel(tm, DIST.m, DIST.k10, 1.06); thm = riegel(tm, DIST.m, DIST.hm, 1.06);
     var rest = (SUB4_PACE - 17.1 - 0.55 * P) / 140.0;
     out.sub4K = rest > 0 ? Math.round(-Math.log(rest) / 0.0053) : null;
     out.sub4P = Math.round((SUB4_PACE - 17.1 - 140.0 * Math.exp(-0.0053 * K)) / 0.55);
+    if (!out.basisKind) out.basisKind = 'training';
   }
+
+  out.k5 = range(d5, t5); out.k10 = range(d10, t10); out.hm = range(dhm, thm);
+  var ms = [dm, rm, tm].filter(function (x) { return x; });
+  out.m = ms.length ? { lo: Math.min.apply(null, ms), hi: Math.max.apply(null, ms) } : null;
+
+  var parts = [];
+  if (race) parts.push('Rennen: ' + nfa(race.kmIst, 2) + ' km am ' + dShort(race.date) + ' in ' + dur(race.sec) + ' (Daniels, Marathon zusätzlich Riegel 1,15).');
+  else parts.push('Noch kein Wettkampf in der Tabelle, deshalb nur aus dem Training.');
+  if (tm) parts.push('Training der letzten acht Wochen: ' + nfa(out.tandaK, 1) + ' km pro Woche bei ' + pace(out.tandaP) + ' pro km (Tanda, kürzere Distanzen daraus mit Riegel).');
+  if (tm) parts.push(out.sub4K ? 'Sub 4 bräuchte bei diesem Tempo ' + out.sub4K + ' km pro Woche, oder bei diesen Kilometern ' + pace(out.sub4P) + ' pro km.'
+                             : 'Sub 4 geht bei diesem Tempo mit keinem Volumen, das Trainingstempo müsste auf ' + pace(out.sub4P) + ' pro km.');
+  out.note = parts.join(' ');
   return out;
+}
+
+/* ------------------------------------------------------ Plan-Anpassung -- */
+/*
+  Wenige Regeln, alle aus dem Plan. Ergebnis ist ein VORSCHLAG mit den
+  konkreten Zellen, die sich ändern würden; geschrieben wird erst nach einem
+  Tipp in der App. Gate und Renntag bleiben fest, deshalb rückt bei einer
+  Wiederholung alles dahinter um eine Woche und die letzte Aufbauwoche vor der
+  Gate-Phase fällt weg.
+*/
+function isBuildWeek(w) { return /^(B[12]|W\d\d)$/.test(w.week); }
+
+function planAdvice(model, today, weekIdx, weekDays, sick, tend, runs) {
+  var weeks = model.weeks;
+  if (weekIdx < 0 || weekIdx + 1 >= weeks.length) return null;
+  var cur = weeks[weekIdx], next = weeks[weekIdx + 1];
+  if (!isBuildWeek(next)) return null;                       // Gate-Wochen bleiben, wie sie sind
+  if (/per App/i.test(next.notiz || '')) {
+    return { kind: 'applied', title: 'Plan angepasst', reason: next.notiz, changes: [] };
+  }
+
+  var sickDays = weekDays.filter(function (d) { return d.done === 'sick'; }).length;
+  var hot = weekDays.filter(function (d) { return d.date <= today && d.sehnen != null && d.sehnen >= 4; }).length;
+  var stop = weekDays.some(function (d) { return d.date <= today && d.sehnen != null && d.sehnen >= 5; });
+  var trendUp = tend.meanPrev != null && tend.mean7 != null && tend.mean7 > tend.meanPrev + 0.5;
+
+  var kind = null, reason = '';
+  if (sick.active ? sick.streak >= 6 : sickDays >= 6) { kind = 'reentry'; reason = 'Sechs oder mehr Krank-Tage: eine Woche zurück und mit 60 Prozent wieder einsteigen.'; }
+  else if (sick.active ? sick.streak >= 3 : sickDays >= 3) { kind = 'repeat'; reason = sickDays + ' Krank-Tage diese Woche: Woche wiederholen, nicht steigern.'; }
+  else if (stop) { kind = 'repeat'; reason = 'Ein Morgenwert von 5 oder mehr diese Woche: Woche wiederholen.'; }
+  else if (hot >= 2) { kind = 'repeat'; reason = hot + ' Tage mit Morgenwert 4 diese Woche: Woche wiederholen, nicht steigern.'; }
+  else if (trendUp && tend.mean7 >= 3) { kind = 'repeat'; reason = 'Sehnen-Trend zeigt zwei Wochen aufwärts: Woche wiederholen.'; }
+
+  /* Wochen mit Wettkampf oder Gate-Test sind an ein Datum gebunden und rücken nicht. */
+  var fixedWeeks = {};
+  model.runs.forEach(function (r) { if (/WETTKAMPF|GATE-TEST/i.test(r.typ)) fixedWeeks[r.week] = true; });
+  var chain = [];                                             // verschiebbare Aufbauwochen in Reihenfolge
+  for (var ci = 0; ci < weeks.length; ci++) if (isBuildWeek(weeks[ci]) && !fixedWeeks[weeks[ci].week]) chain.push(ci);
+
+  var changes = [];
+  function shifted(fromIdx, by, factorFirst) {
+    // Ab fromIdx bekommt jede verschiebbare Aufbauwoche die Werte der Woche `by` Plätze davor in der Kette.
+    var out = [];
+    var start = chain.indexOf(fromIdx);
+    if (start < 0) { for (var q = 0; q < chain.length; q++) if (chain[q] > fromIdx) { start = q; break; } }
+    if (start < 0) return out;
+    for (var k = start; k < chain.length; k++) {
+      var i = chain[k];
+      var srcIdx = chain[k - by] != null ? chain[k - by] : (k - by < 0 ? chain[0] : null);
+      if (srcIdx == null) continue;
+      var src = weeks[srcIdx];
+      var f = (k === start && factorFirst) ? factorFirst : 1;
+      var t = weeks[i];
+      var l1 = src.l1 != null ? Math.round(src.l1 * f * 10) / 10 : t.l1;
+      var l2 = src.l2 != null ? Math.round(src.l2 * f * 10) / 10 : t.l2;
+      var lr = src.lr != null ? Math.round(src.lr * f * 10) / 10 : t.lr;
+      if (l1 !== t.l1 || l2 !== t.l2 || lr !== t.lr) {
+        out.push({ week: t.week, row: t.row, l1From: t.l1, l1: l1, l2From: t.l2, l2: l2, lrFrom: t.lr, lr: lr,
+          note: 'per App ' + dShort(today) + ': ' + (f !== 1 ? 'Wiedereinstieg 60 % von ' : 'Werte von ') + src.week });
+      }
+    }
+    return out;
+  }
+  if (kind === 'repeat') changes = shifted(weekIdx + 1, 1, null);
+  if (kind === 'reentry') {
+    var first = shifted(weekIdx + 1, 1, 0.6).slice(0, 1);
+    var after = first.length ? chain[chain.indexOf(weeks.findIndex(function (w) { return w.week === first[0].week; })) + 1] : null;
+    changes = first.concat(after != null ? shifted(after, 2, null) : []);
+  }
+
+  /* Sprung-Deckel, unabhängig vom Rest: der nächste Long Run maximal 8 % über dem längsten Lauf der letzten 30 Tage */
+  var cap = null;
+  if (runs.max30 && next.lr != null) {
+    var target = changes.length && changes[0].week === next.week ? changes[0].lr : next.lr;
+    var maxLr = Math.round(runs.max30 * 1.08 * 10) / 10;
+    if (target > maxLr) {
+      cap = { from: target, to: maxLr };
+      if (changes.length && changes[0].week === next.week) changes[0].lr = maxLr;
+      else changes.unshift({ week: next.week, row: next.row, l1From: next.l1, l1: next.l1, l2From: next.l2, l2: next.l2, lrFrom: next.lr, lr: maxLr,
+        note: 'per App ' + dShort(today) + ': Long Run gedeckelt auf +8 %' });
+      if (!kind) { kind = 'cap'; reason = 'Der geplante Long Run von ' + nfa(target, 1) + ' km liegt mehr als 8 Prozent über deinem längsten Lauf der letzten 30 Tage (' + nfa(runs.max30, 1) + ' km).'; }
+    }
+  }
+  if (!kind) return null;
+
+  var dropped = weeks[chain[chain.length - 1]];
+  var title = kind === 'reentry' ? 'Wiedereinstieg vorschlagen' : kind === 'repeat' ? 'Woche wiederholen' : 'Long Run deckeln';
+  var summary = changes.length ? changes.length + (changes.length === 1 ? ' Woche' : ' Wochen') + ' ändern sich' : 'Keine Zelle ändert sich';
+  if (kind !== 'cap' && changes.length > 1) summary += ', ' + dropped.week + ' verliert die letzte Steigerung, Gate und Renntag bleiben';
+  return { kind: kind, title: title, reason: reason, summary: summary, changes: changes, cap: cap, nextWeek: next.week };
+}
+
+/* ---------------------------------------------------- Wochenrückblick -- */
+function weekReview(model, weekIdx, days, runs, today) {
+  if (weekIdx < 1) return null;
+  var w = model.weeks[weekIdx - 1];                          // die zuletzt abgeschlossene Woche
+  if (!w) return null;
+  var wd = days.filter(function (d) { return d.week === w.week; });
+  var sessions = wd.filter(function (d) { return isSession(d.plan); });
+  var done = sessions.filter(function (d) { return d.done === true; }).length;
+  var missed = sessions.filter(function (d) { return d.done === false; }).length;
+  var sickN = sessions.filter(function (d) { return d.done === 'sick'; }).length;
+  var open = sessions.filter(function (d) { return d.done == null; }).length;
+  var km = runs.kmByWeek[w.week] || 0;
+  var tv = wd.filter(function (d) { return d.sehnen != null; }).map(function (d) { return d.sehnen; });
+  var tMean = mean(tv), tMax = tv.length ? Math.max.apply(null, tv) : null;
+  var lines = [];
+  lines.push(nfa(km, 1) + ' von ' + nfa(w.kmSoll, 1) + ' km' + (w.kmSoll ? ' (' + Math.round(km / w.kmSoll * 100) + ' %)' : '') + '.');
+  lines.push(done + ' von ' + sessions.length + ' Einheiten erledigt' + (missed ? ', ' + missed + ' ausgefallen' : '') + (sickN ? ', ' + sickN + ' krank' : '') + (open ? ', ' + open + ' ohne Eintrag' : '') + '.');
+  if (tMean != null) lines.push('Sehnen im Schnitt ' + nfa(tMean, 1) + ', höchster Wert ' + nfa(tMax, 1) + (tMax >= 4 ? ', das war ein Tag mit „nicht steigern“.' : ', ruhig.'));
+  var verdict = missed === 0 && open === 0 && (tMax == null || tMax < 4) && (!w.kmSoll || km >= w.kmSoll * 0.9) ? 'Woche gehalten.'
+    : (sickN ? 'Krank dazwischen, zählt nicht gegen dich.' : (km < (w.kmSoll || 0) * 0.7 ? 'Deutlich unter dem Plan, die App schlägt eine Wiederholung vor, wenn es sich häuft.' : 'Fast gehalten, weiter so.'));
+  return { week: w.week, datum: w.datum, km: km, kmSoll: w.kmSoll, done: done, planned: sessions.length, missed: missed, sick: sickN, open: open,
+    tendonMean: tMean, tendonMax: tMax, lines: lines, verdict: verdict };
 }
 
 function derive(model) {
@@ -1360,6 +1480,8 @@ function derive(model) {
     phaseKey: phaseKey, weekIndex: wIdx,
     gateProgress: gateProgress,
     forecast: forecast(runsDone, today),
+    planAdvice: planAdvice(model, today, wIdx, weekDays, { active: sickStreak > 0, streak: sickStreak }, tend, runs),
+    review: weekReview(model, wIdx, days, runs, today),
     phase: PHASES.filter(function (p) { return today >= p.from && today <= p.to; })[0] || PHASES[0],
   };
 }
@@ -2586,23 +2708,13 @@ function viewPlan(D, m) {
     '<button class="act" type="button" data-info="evidenz">' + IC.book + '<span>Alle Belege</span></button></div></section>';
 
   var F = D.forecast;
-  if (F) {
+  if (F && (F.k5 || F.m)) {
     h += sec('Prognose', 'Wie gerechnet', 'data-info="prognose"');
-    var rows = '';
-    if (F.basisKind === 'race') {
-      rows += '<div><dt>5 km</dt><dd>' + dur(F.k5) + '</dd></div><div><dt>10 km</dt><dd>' + dur(F.k10) + '</dd></div><div><dt>Halbmarathon</dt><dd>' + dur(F.hm) + '</dd></div>';
-    }
-    var ms = [F.mDaniels, F.mRiegel, F.mTanda].filter(function (x) { return x; });
-    if (ms.length) rows += '<div><dt>Marathon</dt><dd>' + dur(Math.min.apply(null, ms)) + (ms.length > 1 ? ' bis ' + dur(Math.max.apply(null, ms)) : '') + '</dd></div>';
-    var note = F.basisKind === 'race'
-      ? 'Basis: ' + nf(F.basisKm, 1) + ' km am ' + dShort(F.basisDate) + ' in ' + dur(F.basisSec) + '. Marathon als Spanne aus Daniels, Riegel 1,15 und Tanda. '
-      : 'Für 5 km bis Halbmarathon braucht die Prognose ein Rennen oder einen Gate-Test in der Tabelle. ';
-    if (F.mTanda) {
-      note += 'Marathon aus dem Training der letzten acht Wochen: ' + nf(F.tandaK, 1) + ' km pro Woche bei ' + pace(F.tandaP) + ' pro km.';
-      note += F.sub4K ? ' Sub 4 bräuchte bei diesem Tempo ' + F.sub4K + ' km pro Woche, oder bei diesen Kilometern ' + pace(F.sub4P) + ' pro km.'
-                      : ' Sub 4 geht bei diesem Tempo mit keinem Volumen, das Trainingstempo müsste auf ' + pace(F.sub4P) + ' pro km.';
-    }
-    h += card('<div class="dl">' + rows + '</div><p class="prose" style="margin-top:10px;font-size:13.5px">' + esc(note) + '</p>');
+    var rng = function (r) { return !r ? '–' : (r.lo === r.hi ? dur(r.lo) : dur(r.lo) + ' bis ' + dur(r.hi)); };
+    h += card('<div class="dl">' +
+      '<div><dt>5 km</dt><dd>' + rng(F.k5) + '</dd></div><div><dt>10 km</dt><dd>' + rng(F.k10) + '</dd></div>' +
+      '<div><dt>Halbmarathon</dt><dd>' + rng(F.hm) + '</dd></div><div><dt>Marathon</dt><dd>' + rng(F.m) + '</dd></div></div>' +
+      '<p class="prose" style="margin-top:10px;font-size:13.5px">' + esc(F.note) + '</p>');
   }
 
   h += sec('Stand heute', 'Mehr', 'data-info="gate"');
@@ -3235,7 +3347,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-18T11:30:42.498Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-18T11:51:55.826Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;

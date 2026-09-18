@@ -17,7 +17,7 @@
 <style>html,body{margin:0;background:#150609;color-scheme:dark}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
-<script>window.W27_PWA=true;window.W27_APP_URL="";</script>
+<script>window.W27_PWA=true;window.W27_APP_URL="https://stantioo.github.io/athletic-training/";</script>
 <style>
 /* ============================================================================
    Athletic Training — Design-System
@@ -1184,7 +1184,7 @@ function derive(model) {
     calm28: last28.filter(function (x) { return x.v <= 2; }).length, n28: last28.length,
     streak: streak,
     weekMax: weekTendon.length ? Math.max.apply(null, weekTendon) : null,
-    hotDays: t7.filter(function (v) { return v >= 3; }).length,
+    hotDays: t7.filter(function (v) { return v >= 4; }).length,  // ab 4 gilt „nicht steigern“, Konstantins Anpassung vom 18.09.2026
     baseline: tendon.length ? Math.min.apply(null, tendon.slice(-28).map(function (x) { return x.v; })) : null,
   };
 
@@ -1879,7 +1879,7 @@ function chartTendon(el, D, opts) {
   s += '<g class="grid">';
   ticks(0, yMax, 3).forEach(function (v) { s += '<line x1="' + f.x0 + '" x2="' + f.x1 + '" y1="' + y(v) + '" y2="' + y(v) + '"/>'; });
   s += '</g>';
-  [[3, 'nicht steigern'], [5, 'abbrechen']].forEach(function (r) {
+  [[4, 'nicht steigern'], [5, 'abbrechen']].forEach(function (r) {
     if (r[0] > yMax) return;
     s += '<line class="ref" x1="' + f.x0 + '" x2="' + f.x1 + '" y1="' + y(r[0]) + '" y2="' + y(r[0]) + '" stroke-dasharray="0"/>';
     s += '<text class="lab" x="' + (f.x1 + 4) + '" y="' + (y(r[0]) + 3.5) + '">' + r[0] + '</text>';
@@ -2290,7 +2290,7 @@ function viewHeute(D, m) {
     segScale(a.sehnen) +
     '<div class="pills" style="margin-top:8px">' +
     (a.sehnen == null ? '<span class="pill2 q">Morgenwert fehlt</span>'
-      : a.sehnen <= 2 ? '<span class="pill2 q">' + IC.ok + 'ruhig</span>'
+      : a.sehnen <= 3 ? '<span class="pill2 q">' + IC.ok + 'ruhig</span>'
         : a.sehnen <= 4 ? '<span class="pill2 q">' + IC.warn + 'nicht steigern</span>'
           : '<span class="pill2 q">' + IC.warn + 'Stopp-Regel</span>') +
     (a.gewicht != null ? '<span class="pill2 q">' + nf(a.gewicht, 1) + ' kg</span>' : '') +
@@ -2306,9 +2306,9 @@ function viewHeute(D, m) {
   var t = D.tend, w = D.wgt;
   h += sec('Kennzahlen', 'Alles im Plan', 'data-tab="plan"');
   h += '<div class="grid2">' +
-    stat({ label: 'Sehnen, 7 Tage', value: nf(t.mean7, 1), unit: 'von 10', info: 'sehnen', icon: IC.heart, tone: t.mean7 != null && t.mean7 >= 3 ? 'amber' : '',
+    stat({ label: 'Sehnen, 7 Tage', value: nf(t.mean7, 1), unit: 'von 10', info: 'sehnen', icon: IC.heart, tone: t.mean7 != null && t.mean7 >= 4 ? 'amber' : '',
       delta: deltaChip(t.mean7 != null && t.meanPrev != null ? t.mean7 - t.meanPrev : null, 'zur Vorwoche', true),
-      mini: sparkline(t.series.slice(-14).map(function (x) { return x.v; }), t.mean7 >= 3 ? 'warn' : '') }) +
+      mini: sparkline(t.series.slice(-14).map(function (x) { return x.v; }), t.mean7 >= 4 ? 'warn' : '') }) +
     stat({ label: 'Gewicht, 7 Tage', value: nf(w.mean7, 1), unit: 'kg', info: 'gewicht', icon: IC.scale,
       delta: deltaChip(w.mean7 != null && w.meanPrev != null ? w.mean7 - w.meanPrev : null, 'kg', true, 2),
       mini: sparkline(w.series.slice(-14).map(function (x) { return x.v; })) }) +
@@ -2608,7 +2608,7 @@ function quickSick(dateISO, sick) {
 var LIVE = {
   sehnenChart: function (host, D) { var d = document.createElement('div'); d.className = 'chart'; host.appendChild(d); chartTendon(d, D, { height: 170 }); },
   sehnenBands: function (host) {
-    host.insertAdjacentHTML('beforeend', '<div class="legend"><span><i style="background:var(--sev-1)"></i>0 bis 2 weiter</span><span><i style="background:var(--sev-3)"></i>3 bis 4 nicht steigern</span><span><i style="background:var(--sev-5)"></i>ab 5 abbrechen</span></div>');
+    host.insertAdjacentHTML('beforeend', '<div class="legend"><span><i style="background:var(--sev-1)"></i>0 bis 3 weiter</span><span><i style="background:var(--sev-2)"></i>4 nicht steigern</span><span><i style="background:var(--sev-5)"></i>ab 5 abbrechen</span></div>');
   },
   spikeGauge: function (host, D) { var d = document.createElement('div'); host.appendChild(d); spikeGauge(d, D); },
   weightChart: function (host, D) { var d = document.createElement('div'); d.className = 'chart'; host.appendChild(d); chartWeight(d, D); },
@@ -3138,7 +3138,7 @@ function boot(snapshot) {
 
 </script>
 <script>
-var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-10T20:46:06.671Z"}};
+var SNAPSHOT = {"model":null,"meta":{"title":"Athletic Training","built":"2026-09-18T08:32:29.607Z"}};
 document.getElementById('refreshBtn').insertAdjacentHTML('afterbegin', IC.refresh);
 document.getElementById('setupBtn').innerHTML = IC.gear;
 document.getElementById('sheetClose').innerHTML = IC.x;
